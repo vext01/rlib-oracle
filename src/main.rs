@@ -4,6 +4,7 @@ extern crate getopts;
 extern crate rustc;
 extern crate rustc_driver;
 extern crate rustc_errors;
+extern crate rustc_data_structures;
 extern crate syntax;
 extern crate log;
 
@@ -11,13 +12,32 @@ use rustc::session::Session;
 use rustc_driver::{Compilation, CompilerCalls, RustcDefaultCalls};
 use rustc_driver::driver::{CompileState, CompileController};
 use rustc::session::config::{self, Input, ErrorOutputType};
+use rustc::mir::{BasicBlockData, BasicBlock};
+use rustc::hir::def_id::DefIndex;
+use rustc_data_structures::indexed_vec::Idx;
 use syntax::ast;
 use std::path::PathBuf;
 use std::process::exit;
 
-struct ROCompilerCalls(RustcDefaultCalls);
+struct ROCompilerCalls<'tcx> {
+    ccs: RustcDefaultCalls,
+    def_idx: DefIndex,      // Index of the function
+    block: BasicBlock,      // The basic block we are interested in.
+    block_data: Option<BasicBlockData<'tcx>>, // The result
+}
 
-impl<'a> CompilerCalls<'a> for ROCompilerCalls {
+impl<'tcx> ROCompilerCalls<'tcx> {
+    fn new(ccs: RustcDefaultCalls, def_idx: usize, block: usize) -> Self {
+        Self {
+            ccs: ccs,
+            def_idx: DefIndex::new(def_idx),
+            block: BasicBlock::new(block),
+            block_data: None,
+        }
+    }
+}
+
+impl<'a, 'tcx> CompilerCalls<'a> for ROCompilerCalls<'tcx> {
     fn early_callback(
         &mut self,
         matches: &getopts::Matches,
@@ -26,7 +46,7 @@ impl<'a> CompilerCalls<'a> for ROCompilerCalls {
         descriptions: &rustc_errors::registry::Registry,
         output: ErrorOutputType
     ) -> Compilation {
-        self.0.early_callback(matches, sopts, cfg, descriptions, output)
+        self.ccs.early_callback(matches, sopts, cfg, descriptions, output)
     }
     fn no_input(
         &mut self,
@@ -37,7 +57,7 @@ impl<'a> CompilerCalls<'a> for ROCompilerCalls {
         ofile: &Option<PathBuf>,
         descriptions: &rustc_errors::registry::Registry
     ) -> Option<(Input, Option<PathBuf>)> {
-        self.0.no_input(matches, sopts, cfg, odir, ofile, descriptions)
+        self.ccs.no_input(matches, sopts, cfg, odir, ofile, descriptions)
     }
     fn late_callback(
         &mut self,
@@ -47,10 +67,10 @@ impl<'a> CompilerCalls<'a> for ROCompilerCalls {
         odir: &Option<PathBuf>,
         ofile: &Option<PathBuf>
     ) -> Compilation {
-        self.0.late_callback(matches, sess, input, odir, ofile)
+        self.ccs.late_callback(matches, sess, input, odir, ofile)
     }
     fn build_controller(&mut self, sess: &Session, matches: &getopts::Matches) -> CompileController<'a> {
-        let mut control = self.0.build_controller(sess, matches);
+        let mut control = self.ccs.build_controller(sess, matches);
 
         let callback = |state: &mut CompileState| {
             println!("hi");
@@ -106,5 +126,7 @@ fn main() {
 
     println!("querying {}", args[1]);
     println!("args: {:?}", new_args);
-    rustc_driver::run_compiler(&new_args, &mut ROCompilerCalls(RustcDefaultCalls), None, None);
+
+    let mut ro_calls = ROCompilerCalls::new(RustcDefaultCalls, 0, 0);
+    rustc_driver::run_compiler(&new_args, &mut ro_calls, None, None);
 }
