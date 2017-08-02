@@ -51,17 +51,14 @@ impl<'a> CompilerCalls<'a> for ROCompilerCalls {
     }
     fn build_controller(&mut self, sess: &Session, matches: &getopts::Matches) -> CompileController<'a> {
         let mut control = self.0.build_controller(sess, matches);
-        control.after_analysis.callback = Box::new(after_analysis);
+
+        let callback = |state: &mut CompileState| {
+            println!("hi");
+        };
+        control.after_analysis.callback = Box::new(callback);
         control.after_analysis.stop = Compilation::Stop;
         control
     }
-}
-
-fn after_analysis<'a, 'tcx>(state: &mut CompileState<'a, 'tcx>) {
-    state.session.abort_if_errors();
-
-    //let tcx = state.tcx.unwrap();
-    println!("hi!");
 }
 
 fn find_sysroot() -> String {
