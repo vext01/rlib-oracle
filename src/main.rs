@@ -17,8 +17,10 @@ use rustc::mir::{BasicBlockData, BasicBlock};
 use rustc::hir::def_id::{DefIndex, CrateNum, DefId};
 use rustc_data_structures::indexed_vec::Idx;
 use syntax::ast;
-use std::path::PathBuf;
+use syntax::codemap::FileLoader;
+use std::path::{Path, PathBuf};
 use std::process::exit;
+use std::io;
 
 static CRATE_NAME: &'static str = "rororo";
 
@@ -147,6 +149,23 @@ fn main() {
     println!("querying {}", args[1]);
     println!("args: {:?}", new_args);
 
+    // This file loader lets us inject the crate into the crate store.
+    // Basically just loads a fake file with only an `extern crate' line.
+    struct DummyFileLoader();
+    impl FileLoader for DummyFileLoader {
+        fn file_exists(&self, path: &Path) -> bool {
+            true
+        }
+
+        fn abs_path(&self, path: &Path) -> Option<PathBuf> {
+            None
+        }
+
+        fn read_file(&self, path: &Path) -> io::Result<String> {
+            Ok(format!("extern crate {};\n", CRATE_NAME))
+        }
+    }
+
     let mut ro_calls = ROCompilerCalls::new(RustcDefaultCalls, 0, 0);
-    rustc_driver::run_compiler(&new_args, &mut ro_calls, None, None);
+    rustc_driver::run_compiler(&new_args, &mut ro_calls, Some(Box::new(DummyFileLoader())), None);
 }
