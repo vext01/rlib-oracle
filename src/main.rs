@@ -15,7 +15,9 @@ use rustc_driver::driver::{CompileState, CompileController};
 use rustc::session::config::{self, Input, ErrorOutputType};
 use rustc::mir::{BasicBlockData, BasicBlock};
 use rustc::hir::def_id::{DefIndex, CrateNum, DefId};
+use rustc::ty::{self, TyCtxt};
 use rustc_data_structures::indexed_vec::Idx;
+use rustc::mir;
 use syntax::ast;
 use syntax::codemap::FileLoader;
 use std::path::{Path, PathBuf};
@@ -85,6 +87,16 @@ impl<'a, 'tcx> CompilerCalls<'a> for ROCompilerCalls<'tcx> {
                 index: def_idx,
             };
             println!("{:?}", did);
+            let tcx = state.tcx.expect("no tcx?");
+            let inst = ty::Instance::mono(tcx, did);
+
+            let inst_def = inst.def;
+            let mir = match inst_def {
+                ty::InstanceDef::Item(def_id) => tcx.maybe_optimized_mir(def_id).expect("no MIR!"),
+                _ => tcx.instance_mir(inst_def),
+            };
+            println!("{:?}", mir);
+
         };
         control.after_analysis.callback = Box::new(callback);
         control.after_analysis.stop = Compilation::Stop;
@@ -121,10 +133,12 @@ fn find_sysroot() -> String {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    if args.len() != 2 {
-        println!("bad usage");
+    if args.len() != 3 {
+        println!("usage: <rlib> <def-idx>");
         exit(1);
     }
+
+    let def_idx = args[2].parse().expect("bad def-idx");
 
     let mut new_args = Vec::new();
 
@@ -166,6 +180,6 @@ fn main() {
         }
     }
 
-    let mut ro_calls = ROCompilerCalls::new(RustcDefaultCalls, 0, 0);
+    let mut ro_calls = ROCompilerCalls::new(RustcDefaultCalls, def_idx, 0);
     rustc_driver::run_compiler(&new_args, &mut ro_calls, Some(Box::new(DummyFileLoader())), None);
 }
