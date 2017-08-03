@@ -15,9 +15,8 @@ use rustc_driver::driver::{CompileState, CompileController};
 use rustc::session::config::{self, Input, ErrorOutputType};
 use rustc::mir::{BasicBlockData, BasicBlock};
 use rustc::hir::def_id::{DefIndex, CrateNum, DefId};
-use rustc::ty::{self, TyCtxt};
+use rustc::ty;
 use rustc_data_structures::indexed_vec::Idx;
-use rustc::mir;
 use syntax::ast;
 use syntax::codemap::FileLoader;
 use std::path::{Path, PathBuf};
@@ -80,6 +79,7 @@ impl<'a, 'tcx> CompilerCalls<'a> for ROCompilerCalls<'tcx> {
     fn build_controller(&mut self, sess: &Session, matches: &getopts::Matches) -> CompileController<'a> {
         let mut control = self.ccs.build_controller(sess, matches);
         let def_idx = self.def_idx.clone();
+        let basicblock = self.block.clone();
 
         let callback = move |state: &mut CompileState| {
             let did = DefId {
@@ -92,10 +92,15 @@ impl<'a, 'tcx> CompilerCalls<'a> for ROCompilerCalls<'tcx> {
 
             let inst_def = inst.def;
             let mir = match inst_def {
-                ty::InstanceDef::Item(def_id) => tcx.maybe_optimized_mir(def_id).expect("no MIR!"),
+                ty::InstanceDef::Item(def_id) => tcx.maybe_optimized_mir(def_id)
+                    .expect("no MIR! Did you build with the rlib with `-Z always-encode-mir'?"),
                 _ => tcx.instance_mir(inst_def),
             };
-            println!("{:?}", mir);
+            //println!("{:?}", mir);
+            let blk_data = &mir.basic_blocks()[basicblock];
+            for st in &blk_data.statements {
+                println!("  {:?}", st);
+            }
 
         };
         control.after_analysis.callback = Box::new(callback);
@@ -107,7 +112,6 @@ impl<'a, 'tcx> CompilerCalls<'a> for ROCompilerCalls<'tcx> {
 fn get_cratenum(sess: &Session) -> CrateNum {
     for cnum in sess.cstore.crates() {
         let name = sess.cstore.crate_name(cnum);
-        println!("name: {}", name);
         if name == CRATE_NAME {
             return cnum;
         }
@@ -133,12 +137,13 @@ fn find_sysroot() -> String {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    if args.len() != 3 {
-        println!("usage: <rlib> <def-idx>");
+    if args.len() != 4 {
+        println!("usage: <rlib> <def-idx> <block-idx>");
         exit(1);
     }
 
     let def_idx = args[2].parse().expect("bad def-idx");
+    let block_idx = args[3].parse().expect("bad block-idx");
 
     let mut new_args = Vec::new();
 
@@ -160,26 +165,23 @@ fn main() {
     // Dummy source file
     new_args.push(String::from("/dev/null"));
 
-    println!("querying {}", args[1]);
-    println!("args: {:?}", new_args);
-
     // This file loader lets us inject the crate into the crate store.
     // Basically just loads a fake file with only an `extern crate' line.
     struct DummyFileLoader();
     impl FileLoader for DummyFileLoader {
-        fn file_exists(&self, path: &Path) -> bool {
+        fn file_exists(&self, _: &Path) -> bool {
             true
         }
 
-        fn abs_path(&self, path: &Path) -> Option<PathBuf> {
+        fn abs_path(&self, _: &Path) -> Option<PathBuf> {
             None
         }
 
-        fn read_file(&self, path: &Path) -> io::Result<String> {
+        fn read_file(&self, _: &Path) -> io::Result<String> {
             Ok(format!("extern crate {};\n", CRATE_NAME))
         }
     }
 
-    let mut ro_calls = ROCompilerCalls::new(RustcDefaultCalls, def_idx, 0);
+    let mut ro_calls = ROCompilerCalls::new(RustcDefaultCalls, def_idx, block_idx);
     rustc_driver::run_compiler(&new_args, &mut ro_calls, Some(Box::new(DummyFileLoader())), None);
 }
