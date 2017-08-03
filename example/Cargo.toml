@@ -1,0 +1,10 @@
+[package]
+name = "example"
+version = "0.1.0"
+authors = ["Edd Barrett <vext01@gmail.com>"]
+
+[lib]
+name = "example"
+type = "rlib"
+
+[dependencies]
