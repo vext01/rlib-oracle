@@ -29,7 +29,7 @@ struct ROCompilerCalls<'tcx> {
     ccs: RustcDefaultCalls,
     def_idx: DefIndex,      // Index of the function
     block: BasicBlock,      // The basic block we are interested in.
-    block_data: Option<BasicBlockData<'tcx>>, // The result
+    block_data: Option<&'tcx BasicBlockData<'tcx>>, // The result
 }
 
 impl<'tcx> ROCompilerCalls<'tcx> {
@@ -96,12 +96,7 @@ impl<'a, 'tcx> CompilerCalls<'a> for ROCompilerCalls<'tcx> {
                     .expect("no MIR! Did you build with the rlib with `-Z always-encode-mir'?"),
                 _ => tcx.instance_mir(inst_def),
             };
-            //println!("{:?}", mir);
-            let blk_data = &mir.basic_blocks()[basicblock];
-            for st in &blk_data.statements {
-                println!("  {:?}", st);
-            }
-
+            self.block_data = Some(&mir.basic_blocks()[basicblock]);
         };
         control.after_analysis.callback = Box::new(callback);
         control.after_analysis.stop = Compilation::Stop;
@@ -184,4 +179,9 @@ fn main() {
 
     let mut ro_calls = ROCompilerCalls::new(RustcDefaultCalls, def_idx, block_idx);
     rustc_driver::run_compiler(&new_args, &mut ro_calls, Some(Box::new(DummyFileLoader())), None);
+
+    for st in &ro_calls.block_data.expect("no data?").statements {
+        println!("  {:?}", st);
+    }
+
 }
